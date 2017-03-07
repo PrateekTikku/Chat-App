@@ -5,7 +5,7 @@ import * as userService from "../user/user.service";
 
 
 //If user is opening an existing room, then provide the roomID as a string, else provide the ids of the members in an array
-export function join(data, callback) {
+export function join(data, userID, callback) {
   var roomID, members, type;
   var socket = this;
 
@@ -20,36 +20,41 @@ export function join(data, callback) {
     case 'Has chatted before':                                 //User is opening a chat which probably he/she has done previously
       roomID = data;
       if (roomService.isCurrentlyActive(roomID)) {            //Check if the room is already present in the memory
-        joinCurrentRoom(socket, roomID);
+        joinCurrentRoom(socket, roomID, userID);
       }
       else {                                                  //The room is not present in memory
         roomService.hasChattedBefore(roomID)
           .then(function (yes) {
-          if (yes) {                                            //Check if the user has done this chat before
-            continueOldChat(socket, roomID);
-          }
-          else {                                               //The room ID provided by the user is not correct
-            console.log('room.events.js : join function: RoomID provided does not exist');
-            callback('RoomID: +' + roomID + ' provided does not exist');
-          }
-        });
+            if (yes) {                                            //Check if the user has done this chat before
+              continueOldChat(socket, roomID, userID);
+            }
+            else {                                               //The room ID provided by the user is not correct
+              console.log('room.events.js : join function: RoomID provided does not exist');
+              callback('RoomID: +' + roomID + ' provided does not exist');
+            }
+          });
       }
       break;
     case 'Create new chat':                                 //User has sent an Array of members which means user does not have this chat showing up in his chats
       members = data;
-      members = util.toObjectIDs(members);
-      roomID = roomUtil.generateRoomID(members);
-
+      try {
+        members = util.toObjectIDs(members);
+        roomID = roomUtil.generateRoomID(members);
+      }
+      catch (e) {
+        callback(e);
+        break;
+      }
       if (roomService.isCurrentlyActive(roomID)) {            //Check if the room is already present in the memory
-        joinCurrentRoom(socket, roomID);
+        joinCurrentRoom(socket, roomID, userID);
       }
       else {
         roomService.hasChattedBefore(roomID).then(function (yes) {
           if (yes) {                                              //Check if the user has done this chat before
-            continueOldChat(socket, roomID);
+            continueOldChat(socket, roomID, userID);
           }
           else {                                                 //User has never done this chat before
-            joinNewRoom(socket, roomID);
+            joinNewRoom(socket, roomID, userID);
           }
         });
       }
@@ -59,10 +64,10 @@ export function join(data, callback) {
       break;
   }
 
-  function joinCurrentRoom(socket, roomID) {
-    roomService.joinCurrentRoom(socket, roomID)           //Since the room is present, hence join it
-        .then(function (roomID) {
-        console.log('Joined Active Room-', roomID);
+  function joinCurrentRoom(socket, roomID, userID) {
+    roomService.joinCurrentRoom(socket, roomID, userID)           //Since the room is present, hence join it
+      .then(function (roomID) {
+        // console.log('Joined Active Room-', roomID);
         callback(roomID);                                 //Tell the client that room has been joined, and return the room ID
       })
       .catch(function (err) {
@@ -71,12 +76,12 @@ export function join(data, callback) {
       });
   }
 
-  function continueOldChat(socket, roomID) {
+  function continueOldChat(socket, roomID, userID) {
     roomService.continueOldChat(socket, roomID)       //Since the chat was done in past, bring the room from db.rooms and join it
-      .then(roomService.placeRoomInContainer(socket)) //Place the room joined in room container i.e. in memory
-      .then(function (room) {
-        console.log('Joined Existing Room From DB-', room.roomID);
-        callback(room);                               //Tell the client that room has been joined, and return the room object
+      .then(roomService.placeRoomInContainer(socket, userID)) //Place the room joined in room container i.e. in memory
+      .then(function (roomID) {
+        // console.log('Joined Existing Room From DB-', roomID);
+        callback(roomID);                               //Tell the client that room has been joined, and return the room object
       })
       .catch(function (err) {
         console.log(err);
@@ -84,15 +89,15 @@ export function join(data, callback) {
       });
   }
 
-  function joinNewRoom(socket, roomID) {
+  function joinNewRoom(socket, roomID, userID) {
     roomService.joinNewRoom(socket, roomID)             //Create a new room and join it
       .then(roomService.saveRoom(members))              //Save the room in db.rooms collection
       .then(userService.saveAsChat(members))            //Save the room in each user's document who is a part of this room i.e. save in db.users collection
-      .then(roomService.placeRoomInContainer(socket))   //Place the room joined in room container i.e. in memory
+      .then(roomService.placeRoomInContainer(socket, userID))   //Place the room joined in room container i.e. in memory
       .then(emitUpdateChats(socket))                    //Ask all the members of that room to update their chats section
-      .then(function (room) {
-        console.log('Joined a newly created room-', room.roomID);
-        callback(room);                                 //Tell the client that room has been joined, and return the room object
+      .then(function (roomID) {
+        // console.log('Joined a newly created room-', roomID);
+        callback(roomID);                                 //Tell the client that room has been joined, and return the room object
       })
       .catch(function (err) {
         console.log(err);
@@ -114,9 +119,10 @@ function emitUpdateChats(socket) {
 export function send(data) {
   var socket = this;
   var roomID = data.roomID;
-  var room = socket.adapter.rooms[roomID];
-  socket.broadcast.to(roomID).emit('Incoming Message', data); //Broadcast this message to others in the room
-  //addMessage(room, data);
+  var message = data.message;
+  var sender = roomService.toUserID(roomID, util.getSocketID(socket));
+  roomService.addMessage(roomID, sender, message);
+  socket.broadcast.to(roomID).emit('Incoming Message', {message: message, sender: sender, roomID:roomID}); //Broadcast this message to others in the room
 }
 
 //Add this message to the room messages array

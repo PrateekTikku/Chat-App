@@ -57,7 +57,8 @@ export function deleteContact(req, cb) {
     })
     .catch(err => cb(err, null));
 }
-//Get all the chats done by the user
+
+//Get all the chats done by the user. Modify this function so that it brings out the room members other details such as picURL, name etc. Suggestion : Use mongoose 'populate' method
 export function getRooms(req, cb) {
   var userId = req.params.id;
   User.findOne({'_id': new ObjectId(userId)}, {rooms: 1, _id: 0}).exec()
@@ -68,7 +69,6 @@ export function getRooms(req, cb) {
     })
     .catch(err => cb(err, null));
 }
-
 //Add a new room for the all the members of room
 export function saveAsChat(members) {
   return function (room) {
@@ -77,7 +77,7 @@ export function saveAsChat(members) {
       roomID: room.roomID,
       members: room.members
     };
-    userUtils.addRooms(members, room, function (err, room) {
+    userUtils.addRooms(members, user_room, function (err, room) {
       if(err)
         defer.reject(err);
       defer.resolve(room);

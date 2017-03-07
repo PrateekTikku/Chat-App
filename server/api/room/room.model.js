@@ -7,11 +7,11 @@ var RoomSchema = new mongoose.Schema({
   members: [],
   messages: [{
     _id: false,
-    messageID: {type: Number, auto: true},
+    messageID: {type: Number},
     message: String,
     time: {type: Date, default: Date.now},
-    to: [],
-    from: String
+    receivers: [],
+    sender: String
   }]
 });
 

@@ -9,10 +9,14 @@ var Q = require('q');
 var roomContainer = {};
 
 //Join the existing in-memory room
-export function joinCurrentRoom(socket, roomID) {
+export function joinCurrentRoom(socket, roomID, userID) {
+  var socketID = socket.id.substring(6, socket.id.length);
   var defer = Q.defer();
   socket.join(roomID);
-  roomContainer[roomID].members++;
+  roomContainer[roomID].memberCount++;
+  // if (roomContainer[roomID].map[socketID])
+  //   defer.reject(new Error('Duplicate userIDs for the same socket'));
+  roomContainer[roomID].map[socketID] = userID;
   defer.resolve(roomID);
   return defer.promise;
 }
@@ -61,7 +65,7 @@ export function saveRoom(members) {
     var defer = Q.defer();
     members = util.toObjectIDs(members);
     var new_room = {
-      messages : [],
+      messages: [],
       members: members,
       roomID: roomID
     };
@@ -75,14 +79,58 @@ export function saveRoom(members) {
 }
 
 //Configure the room and place it in room container which means this chat is currently active
-export function placeRoomInContainer(socket) {
+export function placeRoomInContainer(socket, userID) {
   return function (room) {
+    var defer = Q.defer();
+    var socketID = util.getSocketID(socket);
     var socket_io_room;
     socket_io_room = socket.adapter.rooms[room.roomID];   //Get the reference of room the socket has joined
     socket_io_room.messages = [];
-    socket_io_room.members = 1;
-    roomContainer[room.roomID] = socket_io_room;
-    return room;
+    socket_io_room.bufferMessages = [];
+    socket_io_room.isWriting = false;
+    socket_io_room.memberCount = 1;
+    socket_io_room.members = room.members;
+    socket_io_room.map = {};
+    socket_io_room.map[socketID] = userID;
+    roomUtil.getMessageCount(room.roomID, function (err, count) {
+      if (err)
+        defer.reject(new Error(err));
+      socket_io_room.messageCount = count;
+      roomContainer[room.roomID] = socket_io_room;
+      defer.resolve(room.roomID);
+    });
+    return defer.promise;
+  }
+}
+
+//Returns the userID corresponding to the socketID i.e the user which is connected throught the socket
+export function toUserID(roomID, socketID) {
+  return roomContainer[roomID].map[socketID];
+}
+
+export function addMessage(roomID, sender, message) {
+  var socket_room = roomContainer[roomID];
+  var messageObject = {
+    messageID: ++socket_room.messageCount,
+    sender: sender,
+    message: message,
+    receivers: [socket_room.members]
+  };
+  if (socket_room.messages.length >= 2) {
+    socket_room.bufferMessages.push(messageObject);
+    if (!socket_room.isWriting) {
+      socket_room.isWriting = true;
+      roomUtil.saveMessages(roomID, socket_room.messages, function (err, room) {
+        if (err)
+          return console.log(err);
+        socket_room.isWriting = false;
+        socket_room.messages = socket_room.bufferMessages.slice(0);
+        socket_room.bufferMessages = [];
+      });
+    }
+  }
+  else {
+    socket_room.messages.push(messageObject);
   }
 }
 

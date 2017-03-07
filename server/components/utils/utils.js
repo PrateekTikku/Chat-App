@@ -16,3 +16,7 @@ export function toArray(data) {
   array.push(data);
   return array;
 }
+
+export function getSocketID(socket){
+  return socket.id.substring(6, socket.id.length);
+}

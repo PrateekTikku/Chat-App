@@ -5,10 +5,11 @@ import Room from "./room.model";
 import * as util from '../../components/utils/utils';
 
 var ObjectId = require('mongoose').Types.ObjectId;
-//add the message into the particular room
-export function addMessage(roomID, sender, receivers, message, cb) {
-  var query = {"_id": roomID};
-  var updation = {"$push": {messages: {message: message, from: sender, to: receivers}}};
+
+//Save messages into particular room
+export function saveMessages(roomID, messages, cb) {
+  var query = {"roomID": roomID};
+  var updation = {"$pushAll": {messages: messages}};
   var options = {new: true, upsert: false};
   Room.findOneAndUpdate(query, updation, options).exec()
     .then(room => {
@@ -67,6 +68,14 @@ export function find(roomID, cb){
   Room.findOne({roomID:roomID}).exec()
     .then(room =>{
         return cb(null, room);
+    })
+    .catch(err => cb(err, null));
+}
+
+export function getMessageCount(roomID, cb) {
+  Room.findOne({roomID:roomID}).exec()
+    .then(room =>{
+      return cb(null, room.messages.length);
     })
     .catch(err => cb(err, null));
 }
